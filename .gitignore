@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Virtualenvs
+.venv/
+venv/
+env/
+cs_editor_env/
+
+# Save files & backups (never commit anyone's save data)
+*.dat
+*.dat.bak.*
+save_*.dat*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
