@@ -115,6 +115,56 @@ def friendly_label(key: str) -> str:
         return f"Quest done: {stem}"
     return ""
 
+
+def fuzzy_score(query: str, key: str, label: str = "") -> int:
+    """Rank a (key, label) row against `query`. Returns 0 for no match,
+    higher = better. Designed to feel like a typical IDE quick-open: literal
+    substring matches beat subsequence ("acronym") matches, and matches on
+    the key outrank matches on the label.
+
+    Scoring tiers (rough):
+      1000  query == key  (case-insensitive)
+       900  key starts with query
+       700-800  substring inside key (earlier offset = higher)
+       500-600  substring inside label
+       100-400  subsequence inside key (tight grouping = higher)
+        50-300  subsequence inside label
+         0  no match
+    """
+    q = query.strip().lower()
+    if not q:
+        return 1  # empty query: keep everything visible, no preferred order
+    k = key.lower()
+    l = label.lower()
+
+    if k == q: return 1000
+    if k.startswith(q): return 900
+    if q in k:
+        # earlier hit and tighter haystack score higher
+        return max(700, 800 - k.find(q) - len(k) // 20)
+    if l and q in l:
+        return max(500, 600 - l.find(q) - len(l) // 20)
+
+    def subseq(haystack: str) -> int:
+        i = 0
+        positions = []
+        for qc in q:
+            while i < len(haystack):
+                if haystack[i] == qc:
+                    positions.append(i); i += 1; break
+                i += 1
+            else:
+                return 0
+        # all chars matched; reward tight grouping
+        span = positions[-1] - positions[0] + 1
+        return max(100, 400 - span)
+
+    s = subseq(k)
+    if s: return s
+    s = subseq(l)
+    if s: return max(50, s - 100)
+    return 0
+
 # ---- Save file discovery --------------------------------------------------
 
 def default_save_dir() -> Path:
@@ -407,15 +457,31 @@ def run_gui():
             tree.delete(row)
         if not state["pairs"]:
             return
-        q = filt_var.get().strip().lower()
-        for k, v in sorted(state["pairs"], key=lambda kv: (0 if friendly_label(kv[0]) else 1, kv[0])):
+        q = filt_var.get().strip()
+
+        # Build scored list. When a query is present we rank by score (desc)
+        # and drop zero-scoring rows; when empty we keep the original sort
+        # (labeled first, then alphabetical).
+        rows = []
+        for k, v in state["pairs"]:
             label = friendly_label(k)
             if only_known.get() and not label:
                 continue
-            if q and q not in k.lower() and q not in label.lower():
+            score = fuzzy_score(q, k, label)
+            if q and score == 0:
                 continue
+            rows.append((score, k, v, label))
+
+        if q:
+            rows.sort(key=lambda r: (-r[0], r[1]))
+        else:
+            rows.sort(key=lambda r: (0 if r[3] else 1, r[1]))
+
+        for _, k, v, label in rows:
             val_s = str(int(v)) if v == int(v) else str(v)
             tree.insert("", "end", values=(k, val_s, label))
+
+        status_var.set(f"{len(rows)} match{'es' if len(rows)!=1 else ''}" if q else "")
     filt_var.trace_add("write", lambda *_: refresh())
 
     def on_select(_):

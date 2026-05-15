@@ -310,6 +310,65 @@ class TestLabelsAgainstRealSave(unittest.TestCase):
             self.assertTrue(cs.friendly_label(k).startswith("Quest done: "))
 
 
+class TestFuzzyScore(unittest.TestCase):
+    def test_empty_query_keeps_everything(self):
+        self.assertGreater(cs.fuzzy_score("", "AnyKey", "any label"), 0)
+        self.assertGreater(cs.fuzzy_score("   ", "AnyKey", ""), 0)
+
+    def test_exact_key_beats_prefix_beats_substring(self):
+        exact   = cs.fuzzy_score("Player_Bits", "Player_Bits", "Bits")
+        prefix  = cs.fuzzy_score("Player",      "Player_Bits", "Bits")
+        substr  = cs.fuzzy_score("Bits",        "Player_Bits", "Bits")
+        self.assertGreater(exact, prefix)
+        self.assertGreater(prefix, substr)
+        self.assertGreater(substr, 0)
+
+    def test_substring_in_key_beats_substring_in_label(self):
+        key_hit   = cs.fuzzy_score("girolle", "INV_GirolleCaps", "Item: Girolle Caps")
+        label_hit = cs.fuzzy_score("currency", "Player_Bits",    "Bits (currency)")
+        self.assertGreater(key_hit, 0)
+        self.assertGreater(label_hit, 0)
+        self.assertGreater(key_hit, label_hit)
+
+    def test_subsequence_match(self):
+        # "shfrg" should subseq-match an "Shipmind Fragment"-style key
+        s = cs.fuzzy_score("shfrg", "INV_ShipmindFragment", "Item: Shipmind Fragment")
+        self.assertGreater(s, 0)
+
+    def test_no_match_returns_zero(self):
+        self.assertEqual(cs.fuzzy_score("xyz", "Player_Bits", "Bits"), 0)
+        # missing characters (not just out of order)
+        self.assertEqual(cs.fuzzy_score("zzz", "Cycle", "Day"), 0)
+
+    def test_case_insensitive(self):
+        self.assertGreater(cs.fuzzy_score("PLAYER_BITS", "player_bits", "bits"), 0)
+        self.assertGreater(cs.fuzzy_score("PlayEr_BIts", "Player_Bits", ""), 0)
+
+    def test_typical_searches_rank_expected_keys_first(self):
+        """Against the real save: typical user queries should find the obvious target."""
+        ensure_snapshot()
+        bf = cs.decrypt_save(SNAPSHOT.read_bytes())
+        keys = [k for k, _ in cs.list_all_pairs(bf)]
+
+        def top_k(query, n=3):
+            return [k for _, k in sorted(
+                ((cs.fuzzy_score(query, k, cs.friendly_label(k)), k) for k in keys),
+                key=lambda x: -x[0],
+            )[:n]]
+
+        # Unambiguous targets must rank #1
+        self.assertEqual(top_k("girolle", 1), ["INV_GirolleCaps"])
+        self.assertEqual(top_k("bits",    1), ["Player_Bits"])
+        self.assertEqual(top_k("cycle",   1), ["Cycle"])
+        self.assertEqual(top_k("energy",  1), ["Player_Energy"])
+
+        # "condition" legitimately matches multiple keys — both should be in
+        # the top results, ordering between them is fine either way.
+        top = top_k("condition", 3)
+        self.assertIn("Player_Condition", top)
+        self.assertIn("DieCondition",     top)
+
+
 class TestSavePathDiscovery(unittest.TestCase):
     def test_default_save_dir_is_path(self):
         d = cs.default_save_dir()
