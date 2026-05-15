@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python ${{ matrix.python }}
+        run: uv python install ${{ matrix.python }}
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Lint (ruff)
+        run: uv run ruff check .
+
+      - name: Check formatting (ruff)
+        run: uv run ruff format --check .
+
+      - name: Unit tests (no save fixture)
+        # Tests that need a real save snapshot are skipped in CI; the crypto +
+        # label + fuzzy logic still has unit-test coverage that runs without
+        # any user save data.
+        run: uv run pytest -q --deselect tests/test_crypto.py --deselect tests/test_format.py --deselect tests/test_saves.py tests/test_labels.py -k "not snapshot"

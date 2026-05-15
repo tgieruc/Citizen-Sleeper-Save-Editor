@@ -5,23 +5,22 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+build/
+dist/
 
-# Virtualenvs
+# uv / venvs
 .venv/
 venv/
 env/
-cs_editor_env/
 
-# Save files & backups (never commit anyone's save data)
+# Save data & backups — never commit anyone's save
 *.dat
 *.dat.bak.*
 save_*.dat*
 
-# OS
+# OS / editor cruft
 .DS_Store
 Thumbs.db
-
-# Editors
 .vscode/
 .idea/
 *.swp

@@ -1,0 +1,96 @@
+[project]
+name = "cs-save-editor"
+version = "0.1.0"
+description = "Edit Citizen Sleeper save files (Bits, Energy, Cycle, items, quests)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Théo Gieruc" }]
+keywords = ["citizen-sleeper", "save-editor", "unity", "pixelcrushers", "game"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Environment :: X11 Applications :: Qt",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Games/Entertainment",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "pycryptodome>=3.18",
+]
+
+[project.scripts]
+cs-save-editor = "cs_save_editor.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/tgieruc/citizen-sleeper-save-editor"
+Issues = "https://github.com/tgieruc/citizen-sleeper-save-editor/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cs_save_editor"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+    "pre-commit>=3.7",
+]
+
+# ---------- Ruff ----------------------------------------------------------------
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "F", "W",   # pycodestyle + pyflakes
+    "I",             # isort
+    "UP",            # pyupgrade
+    "B",             # bugbear
+    "SIM",           # simplify
+    "C4",            # comprehensions
+    "PIE",           # misc
+    "RUF",           # ruff-specific
+    "PERF",          # perflint
+    "PL",            # pylint subset
+]
+ignore = [
+    "PLR2004",  # magic numbers — useful in crypto/format constants
+    "PLR0913",  # many args is fine for our small CLI
+    "PLR0915",  # function length — the GUI builder is one long function on purpose
+    "PLW0603",  # global is fine in tests
+    "E501",     # line length handled by formatter
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["PLR2004", "S101"]  # asserts and magic literals are the point
+
+[tool.ruff.lint.isort]
+known-first-party = ["cs_save_editor"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# ---------- Pytest --------------------------------------------------------------
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+xfail_strict = true
