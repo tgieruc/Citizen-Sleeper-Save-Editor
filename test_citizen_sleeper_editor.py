@@ -261,6 +261,55 @@ class TestKeyFilter(unittest.TestCase):
             self.assertIn(k, keys)
 
 
+class TestFriendlyLabel(unittest.TestCase):
+    def test_known_stat_returns_explicit_label(self):
+        self.assertEqual(cs.friendly_label("Player_Bits"), "Bits (currency)")
+        self.assertEqual(cs.friendly_label("Cycle"), "Cycle (current day)")
+
+    def test_inventory_items_labeled_as_items(self):
+        self.assertEqual(cs.friendly_label("INV_GirolleCaps"), "Item: Girolle Caps")
+        self.assertEqual(cs.friendly_label("INV_ShipmindFragment"), "Item: Shipmind Fragment")
+        # Acronym handling
+        self.assertEqual(cs.friendly_label("INV_RipperWorm"), "Item: Ripper Worm")
+
+    def test_completion_flags_labeled_as_quests(self):
+        self.assertEqual(cs.friendly_label("AMBERHULLREPAIRS_COMPLETE"), "Quest done: Amberhullrepairs")
+        self.assertEqual(cs.friendly_label("C_BACKINBUSINESS_COMPLETE"), "Quest done: C Backinbusiness")
+
+    def test_unknown_key_returns_empty(self):
+        self.assertEqual(cs.friendly_label("SomeRandomVar"), "")
+        self.assertEqual(cs.friendly_label("DragosR"), "")  # quest-progress vars stay unlabeled
+
+    def test_inv_prefix_alone_not_labeled(self):
+        # "INV_" with nothing after should not produce "Item: "
+        self.assertEqual(cs.friendly_label("INV_"), "")
+
+
+class TestLabelsAgainstRealSave(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        ensure_snapshot()
+        cls.bf = cs.decrypt_save(SNAPSHOT.read_bytes())
+        cls.keys = [k for k, _ in cs.list_all_pairs(cls.bf)]
+
+    def test_inventory_items_get_labeled(self):
+        inv_keys = [k for k in self.keys if k.startswith("INV_")]
+        self.assertGreater(len(inv_keys), 0, "save should have inventory items")
+        for k in inv_keys:
+            if k == "INV_New":
+                continue  # explicit entry in KNOWN_STATS
+            self.assertTrue(
+                cs.friendly_label(k).startswith("Item: "),
+                f"INV_ key {k!r} not labeled as Item",
+            )
+
+    def test_some_quests_labeled(self):
+        complete_keys = [k for k in self.keys if k.endswith("_COMPLETE")]
+        self.assertGreater(len(complete_keys), 5, "save should have some _COMPLETE flags")
+        for k in complete_keys[:5]:
+            self.assertTrue(cs.friendly_label(k).startswith("Quest done: "))
+
+
 class TestSavePathDiscovery(unittest.TestCase):
     def test_default_save_dir_is_path(self):
         d = cs.default_save_dir()

@@ -73,20 +73,47 @@ import hashlib
 PASSWORD = b"WakeUpSleeper"
 PBKDF2_ITERATIONS = 1000
 
-# Keys whose value is interesting to edit. The editor will show all numeric
-# keys, but these are ranked to the top.
+# Explicit labels for variables that don't fit an auto-detected pattern.
+# Anything matching INV_* or *_COMPLETE gets labeled by friendly_label() below
+# without needing an entry here.
 KNOWN_STATS = {
     "Player_Bits":      "Bits (currency)",
     "Player_Energy":    "Energy (max)",
     "Player_Condition": "Condition (HP)",
     "Cycle":            "Cycle (current day)",
-    "INTUIT":           "Intuit perk",
-    "INTERFACE":        "Interface perk",
-    "ENGINEER_PERKS":   "Engineer perks",
+    "INTUIT":           "Intuit skill",
+    "INTERFACE":        "Interface skill",
+    "ENGINEER":         "Engineer skill",
+    "INTUIT_PERKS":     "Intuit perks",
     "INTERFACE_PERKS":  "Interface perks",
+    "ENGINEER_PERKS":   "Engineer perks",
     "MOOD":             "Mood",
-    "DieCondition":     "Die condition",
+    "DieCondition":     "Dice condition (good dice count)",
+    "Die1":             "Die 1 value",
+    "Die2":             "Die 2 value",
+    "Die3":             "Die 3 value",
+    "Die4":             "Die 4 value",
+    "Die5":             "Die 5 value",
+    "LightCycle":       "Light cycle",
+    "INV_New":          "Has new item (HUD flag)",
 }
+
+
+def _split_camel(s: str) -> str:
+    """ 'GirolleCaps' -> 'Girolle Caps'  (also handles 'TLAcronym' -> 'TL Acronym'). """
+    return re.sub(r"(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", " ", s)
+
+
+def friendly_label(key: str) -> str:
+    """Return a human-readable label for a save variable, or '' if unknown."""
+    if key in KNOWN_STATS:
+        return KNOWN_STATS[key]
+    if key.startswith("INV_") and len(key) > 4:
+        return f"Item: {_split_camel(key[4:])}"
+    if key.endswith("_COMPLETE"):
+        stem = key[:-9].replace("_", " ").title()
+        return f"Quest done: {stem}"
+    return ""
 
 # ---- Save file discovery --------------------------------------------------
 
@@ -282,11 +309,11 @@ def cli_list(save_path: Path):
     bf = load_save(save_path)
     pairs = list_all_pairs(bf)
     # Sort: known stats first, then alphabetical
-    pairs.sort(key=lambda kv: (0 if kv[0] in KNOWN_STATS else 1, kv[0]))
+    pairs.sort(key=lambda kv: (0 if friendly_label(kv[0]) else 1, kv[0]))
     print(f"# {len(pairs)} numeric variables in {save_path.name}")
     for k, v in pairs:
-        desc = KNOWN_STATS.get(k, "")
-        marker = "⭐" if k in KNOWN_STATS else "  "
+        desc = friendly_label(k)
+        marker = "⭐" if desc else "  "
         val_s = str(int(v)) if v == int(v) else str(v)
         print(f"  {marker} {k:<40} = {val_s:<10}  {desc}")
 
@@ -357,7 +384,7 @@ def run_gui():
     filt_var = tk.StringVar()
     ttk.Entry(filt_frame, textvariable=filt_var).pack(side="left", fill="x", expand=True, padx=4)
     only_known = tk.BooleanVar(value=True)
-    ttk.Checkbutton(filt_frame, text="Show only known stats", variable=only_known, command=lambda: refresh()).pack(side="right")
+    ttk.Checkbutton(filt_frame, text="Show only labeled (stats, items, quests)", variable=only_known, command=lambda: refresh()).pack(side="right")
 
     # Table
     cols = ("key", "value", "description")
@@ -381,13 +408,14 @@ def run_gui():
         if not state["pairs"]:
             return
         q = filt_var.get().strip().lower()
-        for k, v in sorted(state["pairs"], key=lambda kv: (0 if kv[0] in KNOWN_STATS else 1, kv[0])):
-            if only_known.get() and k not in KNOWN_STATS:
+        for k, v in sorted(state["pairs"], key=lambda kv: (0 if friendly_label(kv[0]) else 1, kv[0])):
+            label = friendly_label(k)
+            if only_known.get() and not label:
                 continue
-            if q and q not in k.lower():
+            if q and q not in k.lower() and q not in label.lower():
                 continue
             val_s = str(int(v)) if v == int(v) else str(v)
-            tree.insert("", "end", values=(k, val_s, KNOWN_STATS.get(k, "")))
+            tree.insert("", "end", values=(k, val_s, label))
     filt_var.trace_add("write", lambda *_: refresh())
 
     def on_select(_):
