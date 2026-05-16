@@ -10,6 +10,8 @@ import cs_save_editor as cs
 def test_known_stat_returns_explicit_label() -> None:
     assert cs.friendly_label("Player_Bits") == "Bits (currency)"
     assert cs.friendly_label("Cycle") == "Cycle (current day)"
+    assert cs.friendly_label("Player_UpgradePoints") == "Unspent improvement points"
+    assert cs.friendly_label("ENDURE_PERKS") == "Endure perks"
 
 
 def test_inventory_items_labeled_as_items() -> None:
