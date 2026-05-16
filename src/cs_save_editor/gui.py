@@ -72,7 +72,7 @@ def run_gui() -> None:
 
     # --- table -------------------------------------------------------------
     cols = ("key", "value", "description")
-    tree = ttk.Treeview(root, columns=cols, show="headings", height=18)
+    tree = ttk.Treeview(root, columns=cols, show="headings", height=18, selectmode="extended")
     tree.heading("key", text="Variable")
     tree.column("key", width=300, anchor="w")
     tree.heading("value", text="Value")
@@ -80,6 +80,24 @@ def run_gui() -> None:
     tree.heading("description", text="Description")
     tree.column("description", width=300, anchor="w")
     tree.pack(fill="both", expand=True, padx=8, pady=4)
+
+    def select_all_visible() -> None:
+        tree.selection_set(tree.get_children())
+
+    def select_none() -> None:
+        tree.selection_remove(tree.selection())
+
+    select_frame = ttk.Frame(root, padding=(8, 0))
+    select_frame.pack(fill="x")
+    ttk.Button(select_frame, text="Select all visible", command=select_all_visible).pack(
+        side="left"
+    )
+    ttk.Button(select_frame, text="Deselect all", command=select_none).pack(side="left", padx=4)
+    ttk.Label(
+        select_frame,
+        text="(Cmd/Ctrl-click and Shift-click also work)",
+        foreground="#888",
+    ).pack(side="left", padx=8)
 
     # --- edit controls -----------------------------------------------------
     edit_frame = ttk.Frame(root, padding=8)
@@ -123,61 +141,90 @@ def run_gui() -> None:
 
     filt_var.trace_add("write", lambda *_: refresh())
 
+    def _selected_keys() -> list[str]:
+        return [tree.item(row)["values"][0] for row in tree.selection()]
+
+    def _reselect(keys: list[str]) -> None:
+        """Re-select rows by key after refresh() invalidates the row IDs."""
+        wanted = set(keys)
+        rows = [row for row in tree.get_children() if tree.item(row)["values"][0] in wanted]
+        if rows:
+            tree.selection_set(rows)
+
     def on_select(_event: object) -> None:
         sel = tree.selection()
         if not sel:
             return
-        item = tree.item(sel[0])
-        new_var.set(item["values"][1])
+        values = {tree.item(row)["values"][1] for row in sel}
+        if len(values) == 1:
+            new_var.set(next(iter(values)))
+        else:
+            new_var.set("")
 
     tree.bind("<<TreeviewSelect>>", on_select)
 
     def apply_value() -> None:
-        sel = tree.selection()
-        if not sel:
-            status_var.set("Pick a row first")
+        keys = _selected_keys()
+        if not keys:
+            status_var.set("Pick one or more rows first")
             return
-        key = tree.item(sel[0])["values"][0]
         try:
             nv = float(new_var.get())
         except ValueError:
             status_var.set("Bad number")
             return
-        new_bf, old = set_value(state["bf"], key, nv)  # type: ignore[arg-type]
-        if old is None:
-            status_var.set("Key not found")
+        bf = state["bf"]
+        changed: list[tuple[str, float]] = []
+        for key in keys:
+            new_bf, old = set_value(bf, key, nv)  # type: ignore[arg-type]
+            if old is not None:
+                changed.append((key, old))
+                bf = new_bf
+        if not changed:
+            status_var.set("No matching keys")
             return
-        state["bf"] = new_bf
-        state["pairs"] = list_numeric_pairs(new_bf)
+        state["bf"] = bf
+        state["pairs"] = list_numeric_pairs(bf)
         refresh()
-        status_var.set(f"{key}: {old} → {nv} (not saved yet)")
+        _reselect(keys)
+        if len(changed) == 1:
+            k, old = changed[0]
+            status_var.set(f"{k}: {old} → {nv} (not saved yet)")
+        else:
+            status_var.set(f"{len(changed)} keys → {nv} (not saved yet)")
 
     ttk.Button(edit_frame, text="Apply", command=apply_value).pack(side="left", padx=4)
 
     def apply_delta(delta: int) -> None:
-        sel = tree.selection()
-        if not sel:
-            status_var.set("Pick a row first")
+        keys = _selected_keys()
+        if not keys:
+            status_var.set("Pick one or more rows first")
             return
-        key = tree.item(sel[0])["values"][0]
-        new_bf, old, new = add_value(state["bf"], key, delta)  # type: ignore[arg-type]
-        if old is None:
-            status_var.set("Key not found")
+        bf = state["bf"]
+        changed: list[tuple[str, float, float]] = []
+        for key in keys:
+            new_bf, old, new = add_value(bf, key, delta)  # type: ignore[arg-type]
+            if old is not None and new is not None:
+                changed.append((key, old, new))
+                bf = new_bf
+        if not changed:
+            status_var.set("No matching keys")
             return
-        state["bf"] = new_bf
-        state["pairs"] = list_numeric_pairs(new_bf)
+        state["bf"] = bf
+        state["pairs"] = list_numeric_pairs(bf)
         refresh()
-        for row in tree.get_children():
-            if tree.item(row)["values"][0] == key:
-                tree.selection_set(row)
-                new_var.set(tree.item(row)["values"][1])
-                break
+        _reselect(keys)
         sign = "+" if delta >= 0 else ""
-        status_var.set(f"{key}: {old} {sign}{delta} = {new} (not saved yet)")
+        if len(changed) == 1:
+            k, old, new = changed[0]
+            new_var.set(str(int(new)) if new == int(new) else str(new))
+            status_var.set(f"{k}: {old} {sign}{delta} = {new} (not saved yet)")
+        else:
+            status_var.set(f"{len(changed)} keys {sign}{delta} (not saved yet)")
 
     quick_frame = ttk.Frame(root, padding=(8, 0))
     quick_frame.pack(fill="x")
-    ttk.Label(quick_frame, text="Quick adjust selected:").pack(side="left")
+    ttk.Label(quick_frame, text="Quick adjust (all selected):").pack(side="left")
     for d in QUICK_ADJUST_DELTAS:
         ttk.Button(
             quick_frame,
