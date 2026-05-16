@@ -30,18 +30,6 @@ def run_gui() -> None:
         side="left", fill="x", expand=True
     )
 
-    def pick_file() -> None:
-        sd = default_save_dir()
-        path = filedialog.askopenfilename(
-            initialdir=str(sd) if sd.exists() else None,
-            title="Pick a save_N.dat file",
-            filetypes=[("Citizen Sleeper save", "save_*.dat"), ("All files", "*")],
-        )
-        if path:
-            load(Path(path))
-
-    ttk.Button(top, text="Open save_N.dat…", command=pick_file).pack(side="right")
-
     def open_save_dir() -> None:
         sd = default_save_dir()
         if not sd.exists():
@@ -55,6 +43,61 @@ def run_gui() -> None:
             os.system(f'explorer "{sd}"')
 
     ttk.Button(top, text="Open save folder", command=open_save_dir).pack(side="right", padx=4)
+
+    # --- save slot picker --------------------------------------------------
+    # Each save_N.dat is an independent game in Citizen Sleeper; expose them
+    # as a dropdown so the user can hop between runs without poking the file
+    # dialog. The dialog is still there for picking backups (.bak.*) or saves
+    # outside the default location.
+    slot_frame = ttk.Frame(root, padding=(8, 0))
+    slot_frame.pack(fill="x")
+    ttk.Label(slot_frame, text="Save slot:").pack(side="left")
+    slot_var = tk.StringVar()
+    slot_combo = ttk.Combobox(
+        slot_frame, textvariable=slot_var, state="readonly", width=20, values=[]
+    )
+    slot_combo.pack(side="left", padx=4)
+    slot_paths: dict[str, Path] = {}
+
+    def refresh_slots(select: Path | None = None) -> None:
+        slot_paths.clear()
+        sd = default_save_dir()
+        if sd.is_dir():
+            for p in list_save_files(sd):
+                slot_paths[p.name] = p
+        slot_combo["values"] = list(slot_paths)
+        if select is not None and select.name in slot_paths and slot_paths[select.name] == select:
+            slot_var.set(select.name)
+        else:
+            slot_var.set("")  # blank when viewing a backup or external file
+
+    def on_slot_pick(_event: object) -> None:
+        name = slot_var.get()
+        if name in slot_paths:
+            load(slot_paths[name])
+
+    slot_combo.bind("<<ComboboxSelected>>", on_slot_pick)
+
+    def pick_other_file() -> None:
+        sd = default_save_dir()
+        # filetypes uses extension-only patterns — macOS Tk has historically
+        # crashed on more elaborate globs like "save_*.dat".
+        try:
+            path = filedialog.askopenfilename(
+                initialdir=str(sd) if sd.is_dir() else None,
+                title="Pick a save file",
+                filetypes=[("Citizen Sleeper save", "*.dat"), ("All files", "*")],
+            )
+        except tk.TclError:
+            # Some macOS Tk builds reject the filetypes argument entirely.
+            path = filedialog.askopenfilename(
+                initialdir=str(sd) if sd.is_dir() else None,
+                title="Pick a save file",
+            )
+        if path:
+            load(Path(path))
+
+    ttk.Button(slot_frame, text="Open other…", command=pick_other_file).pack(side="left", padx=4)
 
     # --- filter / search row -----------------------------------------------
     filt_frame = ttk.Frame(root, padding=(8, 0))
@@ -256,15 +299,14 @@ def run_gui() -> None:
             state["path"] = path
             path_var.set(f"📂 {path}")
             status_var.set(f"Loaded {len(state['pairs'])} variables.")
+            refresh_slots(select=path)
             refresh()
         except Exception as exc:
             messagebox.showerror("Load failed", str(exc))
 
-    # Auto-load slot 1 if available
-    sd = default_save_dir()
-    if sd.exists():
-        saves = list_save_files(sd)
-        if saves:
-            load(saves[0])
+    refresh_slots()
+    saves = list_save_files(default_save_dir()) if default_save_dir().is_dir() else []
+    if saves:
+        load(saves[0])
 
     root.mainloop()
