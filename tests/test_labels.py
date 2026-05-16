@@ -35,6 +35,50 @@ def test_inv_prefix_alone_not_labeled() -> None:
     assert cs.friendly_label("INV_") == ""
 
 
+# ---- sort_rank ------------------------------------------------------------
+
+
+def test_featured_keys_rank_before_other_labeled() -> None:
+    """Featured ranks (group 0) sort strictly before other labeled (group 1)."""
+    assert cs.sort_rank("Player_Bits")[0] == 0
+    assert cs.sort_rank("INV_GirolleCaps")[0] == 1
+    assert cs.sort_rank("Player_Bits") < cs.sort_rank("INV_GirolleCaps")
+
+
+def test_other_labeled_rank_before_unlabeled() -> None:
+    assert cs.sort_rank("INV_GirolleCaps")[0] == 1
+    assert cs.sort_rank("DragosR")[0] == 2
+    assert cs.sort_rank("INV_GirolleCaps") < cs.sort_rank("DragosR")
+
+
+def test_featured_keys_preserve_declared_order() -> None:
+    """Featured keys must come out in the order they appear in FEATURED_KEYS."""
+    keys = list(cs.FEATURED_KEYS)
+    shuffled = list(reversed(keys))
+    sorted_back = sorted(shuffled, key=cs.sort_rank)
+    assert sorted_back == keys
+
+
+def test_featured_set_includes_user_favourites() -> None:
+    must_have = {
+        "Player_Bits",
+        "Player_Energy",
+        "Player_Condition",
+        "Player_UpgradePoints",
+        "Cycle",
+        "DieCondition",
+        "Die1",
+        "Die2",
+        "Die3",
+        "Die4",
+        "Die5",
+        "INTUIT",
+        "INTERFACE",
+        "ENGINEER",
+    }
+    assert must_have <= set(cs.FEATURED_KEYS)
+
+
 def test_inventory_items_get_labeled_in_real_save(snapshot_bf: bytes) -> None:
     inv_keys = [k for k, _ in cs.list_numeric_pairs(snapshot_bf) if k.startswith("INV_")]
     assert len(inv_keys) > 0, "save should have inventory items"

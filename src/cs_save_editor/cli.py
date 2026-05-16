@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from .format import add_value, list_numeric_pairs, set_value
-from .labels import friendly_label
+from .labels import friendly_label, sort_rank
 from .saves import default_save_dir, list_save_files, load_save, write_save
 
 
@@ -26,7 +26,7 @@ def _resolve_save(arg: str | None) -> Path:
 def cmd_list(args: argparse.Namespace) -> int:
     save = _resolve_save(args.save)
     pairs = list_numeric_pairs(load_save(save))
-    pairs.sort(key=lambda kv: (0 if friendly_label(kv[0]) else 1, kv[0]))
+    pairs.sort(key=lambda kv: sort_rank(kv[0]))
     print(f"# {len(pairs)} numeric variables in {save.name}")
     for k, v in pairs:
         desc = friendly_label(k)

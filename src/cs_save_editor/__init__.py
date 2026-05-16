@@ -28,12 +28,13 @@ from .format import (
     parse_pairs,
     set_value,
 )
-from .labels import KNOWN_STATS, friendly_label, fuzzy_score
+from .labels import FEATURED_KEYS, KNOWN_STATS, friendly_label, fuzzy_score, sort_rank
 from .saves import default_save_dir, list_save_files, load_save, write_save
 
 __version__ = "0.1.0"
 
 __all__ = [
+    "FEATURED_KEYS",
     "KNOWN_STATS",
     "PASSWORD",
     "__version__",
@@ -50,5 +51,6 @@ __all__ = [
     "load_save",
     "parse_pairs",
     "set_value",
+    "sort_rank",
     "write_save",
 ]

@@ -9,7 +9,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from .format import add_value, list_numeric_pairs, set_value
-from .labels import friendly_label, fuzzy_score
+from .labels import friendly_label, fuzzy_score, sort_rank
 from .saves import default_save_dir, list_save_files, load_save, write_save
 
 QUICK_ADJUST_DELTAS = (-100, -10, -1, +1, +10, +100, +1000)
@@ -171,7 +171,7 @@ def run_gui() -> None:
         if query:
             rows.sort(key=lambda r: (-r[0], r[1]))
         else:
-            rows.sort(key=lambda r: (0 if r[3] else 1, r[1]))
+            rows.sort(key=lambda r: sort_rank(r[1]))
 
         for _, k, v, label in rows:
             val_s = str(int(v)) if v == int(v) else str(v)

@@ -41,6 +41,41 @@ KNOWN_STATS: dict[str, str] = {
 """Explicit labels for variables that don't fit one of the patterns below."""
 
 
+FEATURED_KEYS: tuple[str, ...] = (
+    # Resources & day
+    "Player_Bits",
+    "Player_Energy",
+    "Player_Condition",
+    "Player_UpgradePoints",
+    "Cycle",
+    # Dice
+    "DieCondition",
+    "Die1",
+    "Die2",
+    "Die3",
+    "Die4",
+    "Die5",
+    # Skills
+    "INTUIT",
+    "INTERFACE",
+    "ENGINEER",
+    "ENDURE",
+    "INTUIT_PERKS",
+    "INTERFACE_PERKS",
+    "ENGINEER_PERKS",
+    "ENDURE_PERKS",
+    # Misc
+    "MOOD",
+)
+"""Variables pinned to the top of the list in this exact order.
+
+Everything else with a :func:`friendly_label` follows alphabetically; everything
+without a label comes last (and is hidden when "Show only labeled" is on).
+"""
+
+_FEATURED_INDEX: dict[str, int] = {k: i for i, k in enumerate(FEATURED_KEYS)}
+
+
 def _split_camel(s: str) -> str:
     """``'GirolleCaps' -> 'Girolle Caps'`` (also handles ``'TLAcronym'``)."""
     return re.sub(r"(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", " ", s)
@@ -56,6 +91,23 @@ def friendly_label(key: str) -> str:
         stem = key[:-9].replace("_", " ").title()
         return f"Quest done: {stem}"
     return ""
+
+
+def sort_rank(key: str) -> tuple[int, int, str]:
+    """Sort key for the variable list.
+
+    Returns a tuple suitable for :func:`sorted` that orders:
+
+    1. Featured keys first, in the explicit order of :data:`FEATURED_KEYS`.
+    2. Other labeled keys, alphabetical.
+    3. Unlabeled keys, alphabetical (hidden by default in the GUI).
+    """
+    idx = _FEATURED_INDEX.get(key)
+    if idx is not None:
+        return (0, idx, key)
+    if friendly_label(key):
+        return (1, 0, key)
+    return (2, 0, key)
 
 
 def fuzzy_score(query: str, key: str, label: str = "") -> int:  # noqa: PLR0911 — one return per tier
