@@ -5,75 +5,25 @@ names (``Player_Bits``, ``INV_GirolleCaps``, ``AMBERHULLREPAIRS_COMPLETE``).
 We attach human-readable labels so the GUI can show a "what does this do"
 column, and we provide a fuzzy ranker so the search box can put the most
 relevant match first.
+
+The per-game variable vocabulary lives in :mod:`.games`. This module
+holds the generic pattern matchers (``INV_*`` items, ``*_COMPLETE``
+quests, optional ``<prefix>_*`` contracts) and the ranker.
 """
 
 from __future__ import annotations
 
 import re
 
-KNOWN_STATS: dict[str, str] = {
-    "Player_Bits": "Bits (currency)",
-    "Player_Energy": "Energy (max)",
-    "Player_Condition": "Condition (HP)",
-    "Player_UpgradePoints": "Unspent improvement points",
-    "Cycle": "Cycle (current day)",
-    "INTUIT": "Intuit skill",
-    "INTERFACE": "Interface skill",
-    "ENGINEER": "Engineer skill",
-    "ENDURE": "Endure skill",
-    "INTUIT_PERKS": "Intuit perks",
-    "INTERFACE_PERKS": "Interface perks",
-    "ENGINEER_PERKS": "Engineer perks",
-    "ENDURE_PERKS": "Endure perks",
-    "UpgradeAvailable": "Improvement-available HUD flag",
-    "ContinueAvailable": "Continue-available HUD flag",
-    "MOOD": "Mood",
-    "DieCondition": "Dice condition (good dice count)",
-    "Die1": "Die 1 value",
-    "Die2": "Die 2 value",
-    "Die3": "Die 3 value",
-    "Die4": "Die 4 value",
-    "Die5": "Die 5 value",
-    "LightCycle": "Light cycle",
-    "SaveSlot": "Save slot index",
-    "INV_New": "Has new item (HUD flag)",
-}
-"""Explicit labels for variables that don't fit one of the patterns below."""
+from .games import CS1, GameConfig
 
+# Default game used by the bare ``friendly_label("X")`` / ``sort_rank("X")``
+# entry points. Tests and back-compat callers rely on this defaulting to CS1.
+_DEFAULT_GAME: GameConfig = CS1
 
-FEATURED_KEYS: tuple[str, ...] = (
-    # Resources & day
-    "Player_Bits",
-    "Player_Energy",
-    "Player_Condition",
-    "Player_UpgradePoints",
-    "Cycle",
-    # Dice
-    "DieCondition",
-    "Die1",
-    "Die2",
-    "Die3",
-    "Die4",
-    "Die5",
-    # Skills
-    "INTUIT",
-    "INTERFACE",
-    "ENGINEER",
-    "ENDURE",
-    "INTUIT_PERKS",
-    "INTERFACE_PERKS",
-    "ENGINEER_PERKS",
-    "ENDURE_PERKS",
-    # Misc
-    "MOOD",
-)
-"""Variables pinned to the top of the list in this exact order.
-
-Everything else with a :func:`friendly_label` follows alphabetically; everything
-without a label comes last (and is hidden when "Show only labeled" is on).
-"""
-
-_FEATURED_INDEX: dict[str, int] = {k: i for i, k in enumerate(FEATURED_KEYS)}
+# Re-exports kept for backwards compatibility with the CS1-only API:
+KNOWN_STATS: dict[str, str] = _DEFAULT_GAME.known_stats
+FEATURED_KEYS: tuple[str, ...] = _DEFAULT_GAME.featured_keys
 
 
 def _split_camel(s: str) -> str:
@@ -81,31 +31,39 @@ def _split_camel(s: str) -> str:
     return re.sub(r"(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", " ", s)
 
 
-def friendly_label(key: str) -> str:
+def friendly_label(key: str, game: GameConfig = _DEFAULT_GAME) -> str:
     """Return a human-readable label for a save variable, or ``""`` if unknown."""
-    if key in KNOWN_STATS:
-        return KNOWN_STATS[key]
+    if key in game.known_stats:
+        return game.known_stats[key]
     if key.startswith("INV_") and len(key) > 4:
         return f"Item: {_split_camel(key[4:])}"
     if key.endswith("_COMPLETE"):
         stem = key[:-9].replace("_", " ").title()
         return f"Quest done: {stem}"
+    if (
+        game.contract_prefix
+        and key.startswith(game.contract_prefix)
+        and len(key) > len(game.contract_prefix)
+    ):
+        return f"Contract: {key[len(game.contract_prefix) :].replace('_', ' ').title()}"
     return ""
 
 
-def sort_rank(key: str) -> tuple[int, int, str]:
+def sort_rank(key: str, game: GameConfig = _DEFAULT_GAME) -> tuple[int, int, str]:
     """Sort key for the variable list.
 
     Returns a tuple suitable for :func:`sorted` that orders:
 
-    1. Featured keys first, in the explicit order of :data:`FEATURED_KEYS`.
+    1. Featured keys first, in the explicit order of ``game.featured_keys``.
     2. Other labeled keys, alphabetical.
     3. Unlabeled keys, alphabetical (hidden by default in the GUI).
     """
-    idx = _FEATURED_INDEX.get(key)
-    if idx is not None:
+    try:
+        idx = game.featured_keys.index(key)
         return (0, idx, key)
-    if friendly_label(key):
+    except ValueError:
+        pass
+    if friendly_label(key, game):
         return (1, 0, key)
     return (2, 0, key)
 
@@ -133,7 +91,7 @@ def fuzzy_score(query: str, key: str, label: str = "") -> int:  # noqa: PLR0911 
     """
     q = query.strip().lower()
     if not q:
-        return 1  # empty query: keep everything visible, no preferred order
+        return 1
     k = key.lower()
     label_lc = label.lower()
 

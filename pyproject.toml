@@ -26,6 +26,9 @@ classifiers = [
 ]
 dependencies = [
     "pycryptodome>=3.18",
+    # Pillow renders the Steam cover JPEGs in the GUI's game-chooser splash.
+    # tkinter's built-in PhotoImage only handles GIF/PNG, not JPEG.
+    "Pillow>=10",
 ]
 
 [project.scripts]

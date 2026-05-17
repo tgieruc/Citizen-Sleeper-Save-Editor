@@ -1,9 +1,9 @@
 """Save file discovery and on-disk I/O.
 
-Citizen Sleeper stores its save files under a platform-specific Unity
-``Application.persistentDataPath`` directory. This module finds it and
-provides safe read / write helpers that always make a timestamped backup
-before overwriting.
+Each :class:`.games.GameConfig` knows where its target game's saves live
+and which filenames are real slots. This module provides game-aware
+helpers built on top of that, plus safe read / write that always makes a
+timestamped backup before overwriting.
 """
 
 from __future__ import annotations
@@ -13,33 +13,39 @@ import time
 from pathlib import Path
 
 from .crypto import decrypt_save, encrypt_save
+from .games import CS1, GameConfig
+
+# Default game used by the bare ``default_save_dir()`` / ``list_save_files()``
+# entry points. CS1 stays the default so the existing CLI / GUI / tests
+# behave the same as before this refactor.
+_DEFAULT_GAME: GameConfig = CS1
 
 
-def default_save_dir() -> Path:
-    """Return the platform-specific Citizen Sleeper save directory.
+def default_save_dir(game: GameConfig = _DEFAULT_GAME) -> Path:
+    """Return the platform-specific save directory for ``game``.
 
-    Falls back to the macOS path if no existing directory is found, so the
-    return value is always usable as the starting point for a file picker.
+    Falls back to the first candidate if no existing directory is found, so
+    the return value is always usable as a file-picker starting point.
     """
-    home = Path.home()
-    candidates = (
-        home / "Library/Application Support/com.JumpOvertheAge.CitizenSleeper",
-        home / "AppData/LocalLow/Jump Over the Age/Citizen Sleeper",
-        home / ".config/unity3d/Jump Over the Age/Citizen Sleeper",
-    )
-    for c in candidates:
-        if c.is_dir():
-            return c
-    return candidates[0]
+    return game.save_dir()
 
 
-def list_save_files(save_dir: Path) -> list[Path]:
-    """Return ``save_*.dat`` files sorted by name."""
-    return sorted(p for p in save_dir.glob("save_*.dat") if p.is_file())
+def list_save_files(save_dir: Path, game: GameConfig = _DEFAULT_GAME) -> list[Path]:
+    """Return active slot files in ``save_dir`` sorted by name.
+
+    CS2's directory contains rolling auto-backups (``save_1.backup.dat``,
+    ``.backup2.dat``, ``.backup3.dat``) and a ``saveinfo.dat`` menu-metadata
+    file alongside real slots. ``game.slot_pattern`` is what filters those
+    out — ``save_<digits>.dat`` for both currently supported games.
+    """
+    if not save_dir.is_dir():
+        return []
+    return sorted(p for p in save_dir.iterdir() if p.is_file() and game.slot_pattern.match(p.name))
 
 
 def load_save(path: Path) -> bytes:
-    """Read and decrypt a save file."""
+    """Read and decrypt a save file. Game-agnostic — both CS1 and CS2 use
+    the same crypto."""
     return decrypt_save(path.read_bytes())
 
 

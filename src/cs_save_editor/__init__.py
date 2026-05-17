@@ -1,7 +1,11 @@
 """Citizen Sleeper save file editor.
 
 A small library + CLI + Tk GUI for decrypting, inspecting, and editing
-Citizen Sleeper save files. See the top-level README for usage.
+save files from **Citizen Sleeper** (2022) and **Citizen Sleeper 2:
+Starward Vector** (2025). Both games share the same PixelCrushers save
+framework (DES-CBC + .NET BinaryFormatter + Lua tag stream); they only
+differ in their Unity ``persistentDataPath`` and the variable vocabulary
+they write — captured in :mod:`.games`.
 
 Public API:
 
@@ -10,6 +14,7 @@ Public API:
         list_numeric_pairs, set_value, add_value,
         friendly_label, fuzzy_score,
         default_save_dir, list_save_files, load_save, write_save,
+        CS1, CS2, GAMES, GameConfig, detect_game, available_games,
     )
 """
 
@@ -28,19 +33,26 @@ from .format import (
     parse_pairs,
     set_value,
 )
+from .games import CS1, CS2, GAMES, GameConfig, available_games, detect_game
 from .labels import FEATURED_KEYS, KNOWN_STATS, friendly_label, fuzzy_score, sort_rank
 from .saves import default_save_dir, list_save_files, load_save, write_save
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
+    "CS1",
+    "CS2",
     "FEATURED_KEYS",
+    "GAMES",
     "KNOWN_STATS",
     "PASSWORD",
+    "GameConfig",
     "__version__",
     "add_value",
+    "available_games",
     "decrypt_save",
     "default_save_dir",
+    "detect_game",
     "encrypt_save",
     "find_inner_base64",
     "find_lua_tag_stream",

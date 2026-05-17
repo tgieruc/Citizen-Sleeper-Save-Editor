@@ -9,37 +9,66 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
+from .chooser import choose_game
 from .format import add_value, list_numeric_pairs, set_value
+from .games import GAMES, GameConfig, detect_game
 from .labels import friendly_label, fuzzy_score, sort_rank
 from .saves import default_save_dir, list_save_files, load_save, write_save
 
 QUICK_ADJUST_DELTAS = (-100, -10, -1, +1, +10, +100, +1000)
 
 
-def run_gui() -> None:
-    state: dict[str, object] = {"path": None, "bf": None, "pairs": [], "dirty": False}
+def run_gui(preferred_game: str | None = None) -> None:
+    # Splash chooser: shows when more than one game's save dir exists.
+    # Skipped automatically (returns the only installed game) when there's
+    # just one — no point asking. Closing the splash without picking exits.
+    picked = choose_game(preferred_game)
+    if picked is None:
+        # No game has a save dir, or user cancelled the splash.
+        # Fall back to auto-detect so the editor still opens (with a
+        # default save_dir that file pickers can start from).
+        picked = detect_game(preferred_game)
+    initial_game = picked
+    state: dict[str, object] = {
+        "path": None,
+        "bf": None,
+        "pairs": [],
+        "dirty": False,
+        "game": initial_game,
+    }
 
     root = tk.Tk()
-    root.title("Citizen Sleeper Save Editor")
-    root.geometry("760x560")
+    root.title(f"{initial_game.title} — Save Editor")
+    root.geometry("760x600")
 
-    # --- top: file controls ------------------------------------------------
+    # --- top: game picker + file controls --------------------------------
     top = ttk.Frame(root, padding=8)
     top.pack(fill="x")
+
+    ttk.Label(top, text="Game:").pack(side="left")
+    game_var = tk.StringVar(value=initial_game.id)
+    game_combo = ttk.Combobox(
+        top,
+        textvariable=game_var,
+        state="readonly",
+        width=6,
+        values=list(GAMES),
+    )
+    game_combo.pack(side="left", padx=4)
+
     path_var = tk.StringVar(value="(no save loaded)")
     ttk.Label(top, textvariable=path_var, foreground="#555").pack(
-        side="left", fill="x", expand=True
+        side="left", fill="x", expand=True, padx=8
     )
 
     def open_save_dir() -> None:
-        sd = default_save_dir()
+        game: GameConfig = state["game"]  # type: ignore[assignment]
+        sd = default_save_dir(game)
         if not sd.exists():
             messagebox.showerror("Not found", f"Save directory not found:\n{sd}")
             return
         try:
             if sys.platform == "win32":
-                # os.startfile is the canonical Windows shell-open; handles
-                # spaces, unicode, and UNC paths without quoting concerns.
                 os.startfile(str(sd))
             elif sys.platform == "darwin":
                 subprocess.run(["open", str(sd)], check=False)
@@ -51,10 +80,6 @@ def run_gui() -> None:
     ttk.Button(top, text="Open save folder", command=open_save_dir).pack(side="right", padx=4)
 
     # --- save slot picker --------------------------------------------------
-    # Each save_N.dat is an independent game in Citizen Sleeper; expose them
-    # as a dropdown so the user can hop between runs without poking the file
-    # dialog. The dialog is still there for picking backups (.bak.*) or saves
-    # outside the default location.
     slot_frame = ttk.Frame(root, padding=(8, 0))
     slot_frame.pack(fill="x")
     ttk.Label(slot_frame, text="Save slot:").pack(side="left")
@@ -65,21 +90,7 @@ def run_gui() -> None:
     slot_combo.pack(side="left", padx=4)
     slot_paths: dict[str, Path] = {}
 
-    def refresh_slots(select: Path | None = None) -> None:
-        slot_paths.clear()
-        sd = default_save_dir()
-        if sd.is_dir():
-            for p in list_save_files(sd):
-                slot_paths[p.name] = p
-        slot_combo["values"] = list(slot_paths)
-        if select is not None and select.name in slot_paths and slot_paths[select.name] == select:
-            slot_var.set(select.name)
-        else:
-            slot_var.set("")  # blank when viewing a backup or external file
-
     def _confirm_discard_dirty() -> bool:
-        """Ask before overwriting unsaved in-memory edits. Returns True if
-        it's safe to proceed (no edits, or user confirmed discard)."""
         if not state.get("dirty"):
             return True
         return messagebox.askyesno(
@@ -87,13 +98,24 @@ def run_gui() -> None:
             "You have unsaved edits in memory.\n\nContinue and discard them?",
         )
 
+    def refresh_slots(select: Path | None = None) -> None:
+        slot_paths.clear()
+        game: GameConfig = state["game"]  # type: ignore[assignment]
+        sd = default_save_dir(game)
+        for p in list_save_files(sd, game):
+            slot_paths[p.name] = p
+        slot_combo["values"] = list(slot_paths)
+        if select is not None and select.name in slot_paths and slot_paths[select.name] == select:
+            slot_var.set(select.name)
+        else:
+            slot_var.set("")
+
     def on_slot_pick(_event: object) -> None:
         name = slot_var.get()
         target = slot_paths.get(name)
         if target is None or target == state.get("path"):
             return
         if not _confirm_discard_dirty():
-            # Revert the combobox to the current slot
             current: Path | None = state.get("path")  # type: ignore[assignment]
             slot_var.set(current.name if current and current.name in slot_paths else "")
             return
@@ -102,9 +124,8 @@ def run_gui() -> None:
     slot_combo.bind("<<ComboboxSelected>>", on_slot_pick)
 
     def pick_other_file() -> None:
-        sd = default_save_dir()
-        # filetypes uses extension-only patterns — macOS Tk has historically
-        # crashed on more elaborate globs like "save_*.dat".
+        game: GameConfig = state["game"]  # type: ignore[assignment]
+        sd = default_save_dir(game)
         try:
             path = filedialog.askopenfilename(
                 initialdir=str(sd) if sd.is_dir() else None,
@@ -112,7 +133,6 @@ def run_gui() -> None:
                 filetypes=[("Citizen Sleeper save", "*.dat"), ("All files", "*")],
             )
         except tk.TclError:
-            # Some macOS Tk builds reject the filetypes argument entirely.
             path = filedialog.askopenfilename(
                 initialdir=str(sd) if sd.is_dir() else None,
                 title="Pick a save file",
@@ -123,13 +143,6 @@ def run_gui() -> None:
     ttk.Button(slot_frame, text="Open other…", command=pick_other_file).pack(side="left", padx=4)
 
     def reload_current() -> None:
-        """Re-read the currently loaded file from disk.
-
-        Useful when the user has saved, jumped back into the game, played a
-        bit, returned to the main menu (which causes the game to autosave),
-        and now wants to edit again — the in-memory blob is stale at that
-        point.
-        """
         current: Path | None = state["path"]  # type: ignore[assignment]
         if current is None:
             status_var.set("Nothing to reload yet")
@@ -153,7 +166,7 @@ def run_gui() -> None:
         filt_frame,
         text="Show only labeled (stats, items, quests)",
         variable=only_known,
-        command=lambda: refresh(),  # noqa: PLW0108 — forward reference to refresh() defined below
+        command=lambda: refresh(),  # noqa: PLW0108
     ).pack(side="right")
 
     # --- table -------------------------------------------------------------
@@ -199,11 +212,12 @@ def run_gui() -> None:
             tree.delete(row)
         if not state["pairs"]:
             return
+        game: GameConfig = state["game"]  # type: ignore[assignment]
         query = filt_var.get().strip()
 
         rows: list[tuple[int, str, float, str]] = []
         for k, v in state["pairs"]:  # type: ignore[union-attr]
-            label = friendly_label(k)
+            label = friendly_label(k, game)
             if only_known.get() and not label:
                 continue
             score = fuzzy_score(query, k, label)
@@ -214,7 +228,7 @@ def run_gui() -> None:
         if query:
             rows.sort(key=lambda r: (-r[0], r[1]))
         else:
-            rows.sort(key=lambda r: sort_rank(r[1]))
+            rows.sort(key=lambda r: sort_rank(r[1], game))
 
         for _, k, v, label in rows:
             val_s = str(int(v)) if v == int(v) else str(v)
@@ -231,7 +245,6 @@ def run_gui() -> None:
         return [tree.item(row)["values"][0] for row in tree.selection()]
 
     def _reselect(keys: list[str]) -> None:
-        """Re-select rows by key after refresh() invalidates the row IDs."""
         wanted = set(keys)
         rows = [row for row in tree.get_children() if tree.item(row)["values"][0] in wanted]
         if rows:
@@ -351,8 +364,35 @@ def run_gui() -> None:
         except Exception as exc:
             messagebox.showerror("Load failed", str(exc))
 
+    def on_game_change(_event: object) -> None:
+        new_id = game_var.get()
+        if new_id not in GAMES:
+            return
+        new_game = GAMES[new_id]
+        if new_game == state["game"]:
+            return
+        if not _confirm_discard_dirty():
+            current: GameConfig = state["game"]  # type: ignore[assignment]
+            game_var.set(current.id)
+            return
+        state["game"] = new_game
+        state["path"] = None
+        state["bf"] = None
+        state["pairs"] = []
+        state["dirty"] = False
+        root.title(f"{new_game.title} — Save Editor")
+        path_var.set("(no save loaded)")
+        refresh_slots()
+        saves = list_save_files(default_save_dir(new_game), new_game)
+        if saves:
+            load(saves[0])
+        else:
+            refresh()
+
+    game_combo.bind("<<ComboboxSelected>>", on_game_change)
+
     refresh_slots()
-    saves = list_save_files(default_save_dir()) if default_save_dir().is_dir() else []
+    saves = list_save_files(default_save_dir(initial_game), initial_game)
     if saves:
         load(saves[0])
 
