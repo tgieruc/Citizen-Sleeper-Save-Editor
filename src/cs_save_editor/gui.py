@@ -16,7 +16,7 @@ QUICK_ADJUST_DELTAS = (-100, -10, -1, +1, +10, +100, +1000)
 
 
 def run_gui() -> None:
-    state: dict[str, object] = {"path": None, "bf": None, "pairs": []}
+    state: dict[str, object] = {"path": None, "bf": None, "pairs": [], "dirty": False}
 
     root = tk.Tk()
     root.title("Citizen Sleeper Save Editor")
@@ -71,10 +71,27 @@ def run_gui() -> None:
         else:
             slot_var.set("")  # blank when viewing a backup or external file
 
+    def _confirm_discard_dirty() -> bool:
+        """Ask before overwriting unsaved in-memory edits. Returns True if
+        it's safe to proceed (no edits, or user confirmed discard)."""
+        if not state.get("dirty"):
+            return True
+        return messagebox.askyesno(
+            "Unsaved changes",
+            "You have unsaved edits in memory.\n\nContinue and discard them?",
+        )
+
     def on_slot_pick(_event: object) -> None:
         name = slot_var.get()
-        if name in slot_paths:
-            load(slot_paths[name])
+        target = slot_paths.get(name)
+        if target is None or target == state.get("path"):
+            return
+        if not _confirm_discard_dirty():
+            # Revert the combobox to the current slot
+            current: Path | None = state.get("path")  # type: ignore[assignment]
+            slot_var.set(current.name if current and current.name in slot_paths else "")
+            return
+        load(target)
 
     slot_combo.bind("<<ComboboxSelected>>", on_slot_pick)
 
@@ -94,10 +111,30 @@ def run_gui() -> None:
                 initialdir=str(sd) if sd.is_dir() else None,
                 title="Pick a save file",
             )
-        if path:
+        if path and _confirm_discard_dirty():
             load(Path(path))
 
     ttk.Button(slot_frame, text="Open other…", command=pick_other_file).pack(side="left", padx=4)
+
+    def reload_current() -> None:
+        """Re-read the currently loaded file from disk.
+
+        Useful when the user has saved, jumped back into the game, played a
+        bit, returned to the main menu (which causes the game to autosave),
+        and now wants to edit again — the in-memory blob is stale at that
+        point.
+        """
+        current: Path | None = state["path"]  # type: ignore[assignment]
+        if current is None:
+            status_var.set("Nothing to reload yet")
+            return
+        if not _confirm_discard_dirty():
+            return
+        load(current)
+
+    ttk.Button(slot_frame, text="↻ Reload from disk", command=reload_current).pack(
+        side="left", padx=4
+    )
 
     # --- filter / search row -----------------------------------------------
     filt_frame = ttk.Frame(root, padding=(8, 0))
@@ -228,6 +265,7 @@ def run_gui() -> None:
             return
         state["bf"] = bf
         state["pairs"] = list_numeric_pairs(bf)
+        state["dirty"] = True
         refresh()
         _reselect(keys)
         if len(changed) == 1:
@@ -255,6 +293,7 @@ def run_gui() -> None:
             return
         state["bf"] = bf
         state["pairs"] = list_numeric_pairs(bf)
+        state["dirty"] = True
         refresh()
         _reselect(keys)
         sign = "+" if delta >= 0 else ""
@@ -288,6 +327,7 @@ def run_gui() -> None:
         if not ok:
             return
         bak = write_save(state["path"], state["bf"])  # type: ignore[arg-type]
+        state["dirty"] = False
         status_var.set(f"Saved. Backup: {bak.name}")
 
     ttk.Button(edit_frame, text="💾 Save to disk", command=save_now).pack(side="right")
@@ -297,6 +337,7 @@ def run_gui() -> None:
             state["bf"] = load_save(path)
             state["pairs"] = list_numeric_pairs(state["bf"])  # type: ignore[arg-type]
             state["path"] = path
+            state["dirty"] = False
             path_var.set(f"📂 {path}")
             status_var.set(f"Loaded {len(state['pairs'])} variables.")
             refresh_slots(select=path)
