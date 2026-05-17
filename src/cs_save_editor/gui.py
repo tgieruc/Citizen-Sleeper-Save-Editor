@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import tkinter as tk
 from pathlib import Path
@@ -35,12 +36,17 @@ def run_gui() -> None:
         if not sd.exists():
             messagebox.showerror("Not found", f"Save directory not found:\n{sd}")
             return
-        if sys.platform == "darwin":
-            os.system(f'open "{sd}"')
-        elif sys.platform.startswith("linux"):
-            os.system(f'xdg-open "{sd}"')
-        else:
-            os.system(f'explorer "{sd}"')
+        try:
+            if sys.platform == "win32":
+                # os.startfile is the canonical Windows shell-open; handles
+                # spaces, unicode, and UNC paths without quoting concerns.
+                os.startfile(str(sd))
+            elif sys.platform == "darwin":
+                subprocess.run(["open", str(sd)], check=False)
+            else:
+                subprocess.run(["xdg-open", str(sd)], check=False)
+        except (OSError, FileNotFoundError) as exc:
+            messagebox.showerror("Could not open folder", f"{sd}\n\n{exc}")
 
     ttk.Button(top, text="Open save folder", command=open_save_dir).pack(side="right", padx=4)
 
